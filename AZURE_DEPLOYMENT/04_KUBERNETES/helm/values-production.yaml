@@ -1,0 +1,60 @@
+# Production values for Safaricom Contact Center
+
+replicaCount: 5
+
+image:
+  repository: safaricom-cc
+  pullPolicy: Always
+  tag: "latest"
+
+service:
+  type: LoadBalancer
+  port: 443
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: cc.safaricom.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: cc-tls
+      hosts:
+        - cc.safaricom.com
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 5
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+
+nodeSelector:
+  environment: production
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - safaricom-cc
+          topologyKey: kubernetes.io/hostname

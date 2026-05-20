@@ -1,0 +1,38 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: safaricom-cc-sa
+  namespace: safaricom-cc
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: safaricom-cc-role
+  namespace: safaricom-cc
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/logs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: safaricom-cc-rolebinding
+  namespace: safaricom-cc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: safaricom-cc-role
+subjects:
+- kind: ServiceAccount
+  name: safaricom-cc-sa
+  namespace: safaricom-cc
