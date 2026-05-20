@@ -1,0 +1,192 @@
+################################################################################
+# GitHub Actions Workflow: Testing
+# Runs unit tests, integration tests, and smoke tests
+################################################################################
+
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-xdist
+
+      - name: Run Unit Tests
+        run: |
+          pytest 09_DOCUMENTATION/tests/unit/ -v --cov=. --cov-report=xml
+
+      - name: Upload Coverage Reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          flags: unittests
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_cc
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest psycopg2-binary
+
+      - name: Create Test Database Schema
+        env:
+          PGHOST: localhost
+          PGUSER: test_user
+          PGPASSWORD: test_password
+          PGDATABASE: test_cc
+        run: |
+          psql -f 02_DATABASE/schema/01_create_tables.sql
+
+      - name: Run Integration Tests
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_cc
+        run: |
+          pytest 09_DOCUMENTATION/tests/integration/ -v
+
+  docker-build-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build IVR Container
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./03_APPLICATION/docker/Dockerfile.ivr
+          push: false
+          tags: safaricom-cc:ivr-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Call Manager Container
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./03_APPLICATION/docker/Dockerfile.callmgr
+          push: false
+          tags: safaricom-cc:callmgr-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+
+      - name: Helm Lint
+        run: |
+          helm lint ./04_KUBERNETES/helm --strict
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive ./01_INFRASTRUCTURE/terraform
+
+      - name: Terraform Validate
+        run: terraform validate ./01_INFRASTRUCTURE/terraform
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Run Trivy Security Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  test-results:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, helm-lint, terraform-validate]
+    if: always()
+    steps:
+      - name: Check Test Results
+        run: |
+          if [ "${{ needs.unit-tests.result }}" != "success" ]; then
+            echo "❌ Unit tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.integration-tests.result }}" != "success" ]; then
+            echo "❌ Integration tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.helm-lint.result }}" != "success" ]; then
+            echo "❌ Helm lint failed"
+            exit 1
+          fi
+          if [ "${{ needs.terraform-validate.result }}" != "success" ]; then
+            echo "❌ Terraform validation failed"
+            exit 1
+          fi
+          echo "✅ All tests passed!"

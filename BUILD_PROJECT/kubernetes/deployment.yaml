@@ -1,0 +1,487 @@
+---
+# SAFARICOM CONTACT CENTER - KUBERNETES DEPLOYMENT
+# Deploy with: kubectl apply -f deployment.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: safaricom-cc
+  labels:
+    name: safaricom-cc
+
+---
+# ============================================
+# DATABASE - PostgreSQL Primary
+# ============================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-primary-pvc
+  namespace: safaricom-cc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: safaricom-cc
+data:
+  postgresql.conf: |
+    max_connections = 200
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    work_mem = 8MB
+    log_statement = 'all'
+    log_duration = on
+    log_min_duration_statement = 1000
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-primary
+  namespace: safaricom-cc
+spec:
+  serviceName: postgres-primary
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-primary
+  template:
+    metadata:
+      labels:
+        app: postgres-primary
+        component: database
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: safaricom_cc
+        - name: POSTGRES_USER
+          value: cc_user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /etc/postgresql
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U cc_user -d safaricom_cc
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U cc_user -d safaricom_cc
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-primary-pvc
+      - name: postgres-config
+        configMap:
+          name: postgres-config
+      - name: init-scripts
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary
+  namespace: safaricom-cc
+  labels:
+    app: postgres-primary
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+  selector:
+    app: postgres-primary
+
+---
+# ============================================
+# IVR DEPLOYMENT
+# ============================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ivr
+  namespace: safaricom-cc
+  labels:
+    app: ivr
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ivr
+  template:
+    metadata:
+      labels:
+        app: ivr
+        component: ivr
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - ivr
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: freeswitch
+        image: freeswitch:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5060
+          protocol: UDP
+          name: sip
+        - containerPort: 8021
+          protocol: TCP
+          name: esl
+        env:
+        - name: FS_DOMAIN
+          value: "ivr.safaricom.local"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: DB_HOST
+          value: "postgres-primary.safaricom-cc.svc.cluster.local"
+        - name: DB_USER
+          value: "cc_user"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+        volumeMounts:
+        - name: freeswitch-config
+          mountPath: /etc/freeswitch
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8021
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8021
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: freeswitch-config
+        configMap:
+          name: freeswitch-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ivr-service
+  namespace: safaricom-cc
+  labels:
+    app: ivr
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5060
+    targetPort: 5060
+    protocol: UDP
+    name: sip
+  - port: 8021
+    targetPort: 8021
+    protocol: TCP
+    name: esl
+  selector:
+    app: ivr
+
+---
+# ============================================
+# IVR AUTOSCALING
+# ============================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ivr-hpa
+  namespace: safaricom-cc
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ivr
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 75
+
+---
+# ============================================
+# MONITORING - PROMETHEUS
+# ============================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: safaricom-cc
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    scrape_configs:
+    - job_name: 'safaricom-cc'
+      static_configs:
+      - targets: ['localhost:9090']
+    - job_name: 'postgres'
+      static_configs:
+      - targets: ['postgres-exporter:9187']
+    - job_name: 'kubernetes-apiservers'
+      kubernetes_sd_configs:
+      - role: endpoints
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: default;kubernetes;https
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: safaricom-cc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: storage
+          mountPath: /prometheus
+        args:
+        - "--config.file=/etc/prometheus/prometheus.yml"
+        - "--storage.tsdb.path=/prometheus"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: storage
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: safaricom-cc
+spec:
+  ports:
+  - port: 9090
+    targetPort: 9090
+  selector:
+    app: prometheus
+
+---
+# ============================================
+# GRAFANA
+# ============================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: safaricom-cc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: admin123
+        - name: GF_SECURITY_ADMIN_USER
+          value: admin
+        volumeMounts:
+        - name: storage
+          mountPath: /var/lib/grafana
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: storage
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: safaricom-cc
+spec:
+  type: NodePort
+  ports:
+  - port: 3000
+    nodePort: 30300
+    targetPort: 3000
+  selector:
+    app: grafana
+
+---
+# ============================================
+# REDIS CACHE
+# ============================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: safaricom-cc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: safaricom-cc
+spec:
+  ports:
+  - port: 6379
+    targetPort: 6379
+  selector:
+    app: redis
+
+---
+# ============================================
+# SECRETS
+# ============================================
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: safaricom-cc
+type: Opaque
+stringData:
+  password: cc_password_secure
+  username: cc_user

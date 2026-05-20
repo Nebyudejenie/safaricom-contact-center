@@ -1,0 +1,247 @@
+version: '3.9'
+
+# SAFARICOM CONTACT CENTER - LOCAL DEPLOYMENT
+# Run with: docker-compose up -d
+# Test with: curl http://localhost:8080/health
+
+services:
+
+  # ============================================
+  # DATABASE LAYER
+  # ============================================
+
+  postgres-primary:
+    image: postgres:15-alpine
+    container_name: safaricom-db-primary
+    environment:
+      POSTGRES_DB: safaricom_cc
+      POSTGRES_USER: cc_user
+      POSTGRES_PASSWORD: cc_password_secure
+      POSTGRES_INITDB_ARGS: "-c max_connections=200 -c shared_buffers=256MB"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./03_DATABASE/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cc_user -d safaricom_cc"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - safaricom-network
+    labels:
+      com.safaricom.component: "database"
+
+  postgres-backup:
+    image: postgres:15-alpine
+    container_name: safaricom-db-backup
+    environment:
+      POSTGRES_DB: safaricom_cc
+      POSTGRES_USER: cc_user
+      POSTGRES_PASSWORD: cc_password_secure
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_backup_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cc_user -d safaricom_cc"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - safaricom-network
+    labels:
+      com.safaricom.component: "database-backup"
+
+  # ============================================
+  # IVR LAYER (FreeSWITCH)
+  # ============================================
+
+  ivr-1:
+    image: freeswitch:latest
+    container_name: safaricom-ivr-1
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "8021:8021"
+    environment:
+      FS_DOMAIN: "ivr.safaricom.local"
+      LOG_LEVEL: "info"
+    volumes:
+      - ./02_IVR/config/freeswitch:/etc/freeswitch
+    healthcheck:
+      test: ["CMD", "fs_cli", "-x", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - safaricom-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    labels:
+      com.safaricom.component: "ivr"
+
+  ivr-2:
+    image: freeswitch:latest
+    container_name: safaricom-ivr-2
+    ports:
+      - "5061:5060/udp"
+      - "5061:5060/tcp"
+      - "8022:8021"
+    environment:
+      FS_DOMAIN: "ivr-2.safaricom.local"
+      LOG_LEVEL: "info"
+    volumes:
+      - ./02_IVR/config/freeswitch:/etc/freeswitch
+    healthcheck:
+      test: ["CMD", "fs_cli", "-x", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - safaricom-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    labels:
+      com.safaricom.component: "ivr"
+
+  # ============================================
+  # LOAD BALANCER
+  # ============================================
+
+  nginx-lb:
+    image: nginx:alpine
+    container_name: safaricom-load-balancer
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./01_INFRASTRUCTURE/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - safaricom-network
+    depends_on:
+      - ivr-1
+      - ivr-2
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      com.safaricom.component: "load-balancer"
+
+  # ============================================
+  # MONITORING STACK
+  # ============================================
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: safaricom-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./04_MONITORING/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./04_MONITORING/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - safaricom-network
+    labels:
+      com.safaricom.component: "monitoring"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: safaricom-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_SECURITY_ADMIN_USER: admin
+      GF_INSTALL_PLUGINS: "grafana-worldmap-panel"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./04_MONITORING/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./04_MONITORING/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - safaricom-network
+    depends_on:
+      - prometheus
+    labels:
+      com.safaricom.component: "monitoring"
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: safaricom-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./04_MONITORING/alertmanager.yml:/etc/alertmanager/config.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - safaricom-network
+    labels:
+      com.safaricom.component: "monitoring"
+
+  # ============================================
+  # REDIS CACHE (Call Cache)
+  # ============================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: safaricom-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - safaricom-network
+    labels:
+      com.safaricom.component: "cache"
+
+  # ============================================
+  # API STUBS (For testing)
+  # ============================================
+
+  api-stub:
+    image: node:18-alpine
+    container_name: safaricom-api-stub
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./05_DEPLOYMENT/api-stub.js:/app/server.js
+      - ./05_DEPLOYMENT/package.json:/app/package.json
+    working_dir: /app
+    command: npm start
+    networks:
+      - safaricom-network
+    labels:
+      com.safaricom.component: "api-stubs"
+
+networks:
+  safaricom-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  postgres_backup_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  redis_data:
+    driver: local
