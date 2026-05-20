@@ -138,8 +138,8 @@ create_backup() {
     log_info "Backing up Terraform state..."
     cd "${PROJECT_ROOT}/01_INFRASTRUCTURE/terraform"
 
-    if [ -f terraform.tfstate ]; then
-        cp terraform.tfstate "${backup_dir}/terraform.tfstate" || true
+    if [ -f terraform.cosmic ]; then
+        cp terraform.cosmic "${backup_dir}/terraform.cosmic" || true
     fi
 
     # Backup Kubernetes resources if cluster exists

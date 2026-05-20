@@ -1,23 +1,12 @@
 ################################################################################
 # TERRAFORM BACKEND
 # Remote state management using Azure Storage
-# ============================================================================
-
-# To use remote state, first create the storage account:
-#
-# az group create --name tfstate --location eastus
-# az storage account create --resource-group tfstate \
-#   --name safaricomccstate \
-#   --sku Standard_LRS
-# az storage container create -n terraform-state \
-#   --account-name safaricomccstate
-#
-# Then update the backend configuration below with your storage account details.
+################################################################################
 
 terraform {
   backend "azurerm" {
-    resource_group_name  = "tfstate"
-    storage_account_name = "safaricomccstate"
+    resource_group_name  = "cosmic"
+    storage_account_name = "ccc0c3f78ed9"
     container_name       = "terraform-state"
     key                  = "production.tfstate"
   }

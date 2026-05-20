@@ -82,14 +82,14 @@ subscription_id = "YOUR_SUBSCRIPTION_ID_HERE"
 ```bash
 # Create resource group for state
 az group create \
-  --name tfstate \
+  --name cosmic \
   --location eastus
 
 # Create storage account
 STORAGE_ACCOUNT_NAME="safaricomccstate$(date +%s)"
 az storage account create \
   --name "$STORAGE_ACCOUNT_NAME" \
-  --resource-group tfstate \
+  --resource-group cosmic \
   --sku Standard_LRS
 
 # Create container
@@ -414,7 +414,7 @@ az group delete \
 ```bash
 az storage account delete \
   --name "$STORAGE_ACCOUNT_NAME" \
-  --resource-group tfstate \
+  --resource-group cosmic \
   --yes
 ```
 

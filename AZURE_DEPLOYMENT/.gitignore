@@ -1,0 +1,33 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+tfplan
+*.tfvars.secret
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Backups
+.backups/
+*.backup
+
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+vendor/

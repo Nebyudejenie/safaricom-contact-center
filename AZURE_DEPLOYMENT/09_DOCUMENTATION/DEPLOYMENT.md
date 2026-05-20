@@ -394,8 +394,8 @@ git commit -m "Initial Azure deployment"
 # Create .gitignore
 cat > .gitignore << EOF
 # Terraform
-*.tfstate
-*.tfstate.*
+*.cosmic
+*.cosmic.*
 .terraform/
 tfplan
 .env
