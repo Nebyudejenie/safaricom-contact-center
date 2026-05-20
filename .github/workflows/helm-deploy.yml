@@ -10,8 +10,8 @@ on:
     branches:
       - main
     paths:
-      - '04_KUBERNETES/helm/**'
-      - '07_CI_CD/.github/workflows/helm-deploy.yml'
+      - 'AZURE_DEPLOYMENT/04_KUBERNETES/helm/**'
+      - '.github/workflows/helm-deploy.yml'
   workflow_run:
     workflows: ["Terraform Apply"]
     types:
@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Azure Login
         uses: azure/login@v1
@@ -60,10 +60,10 @@ jobs:
 
       - name: Deploy Contact Center Application
         run: |
-          helm upgrade --install safaricom-cc ./04_KUBERNETES/helm \
+          helm upgrade --install safaricom-cc ./AZURE_DEPLOYMENT/04_KUBERNETES/helm \
             --namespace safaricom-cc \
             --create-namespace \
-            -f ./04_KUBERNETES/helm/values-production.yaml \
+            -f ./AZURE_DEPLOYMENT/04_KUBERNETES/helm/values-production.yaml \
             --wait \
             --timeout 10m
 
