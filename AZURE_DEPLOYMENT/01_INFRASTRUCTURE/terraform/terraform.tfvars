@@ -22,9 +22,9 @@ database_subnet_cidr   = "10.0.3.0/24"
 db_admin_username = "psqladmin"
 db_name           = "safaricom_cc"
 
-# Azure Free Tier: Use Standard_B1ms (cheapest tier)
-# For production: Use Standard_D2s_v3 or higher
-db_sku_name  = "Standard_B1ms"
+# Azure Free Tier: Use Burstable_B1ms (cheapest tier)
+# For production: Use GeneralPurpose_Standard_D2s_v3 or MemoryOptimized_Standard_E2s_v3
+db_sku_name  = "Burstable_B1ms"
 db_storage_mb = 32768  # 32GB
 
 # KUBERNETES (AKS)
