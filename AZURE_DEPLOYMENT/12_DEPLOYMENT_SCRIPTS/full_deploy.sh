@@ -51,7 +51,7 @@ usage() {
     cat << EOF
 Usage: $0 <environment> <region> [options]
 
-Environments: dev, staging, production
+Environments: dev, staging, production, Production
 Regions: eastus, westus, northeurope, southeastasia
 
 Options:
@@ -381,13 +381,25 @@ main() {
         usage
     fi
 
-    ENVIRONMENT="$1"
-    REGION="$2"
+    ENVIRONMENT=$(echo "$1" | tr '[:upper:]' '[:lower:]')  # Convert to lowercase
+    REGION=$(echo "$2" | tr '[:upper:]' '[:lower:]')       # Convert to lowercase
     DRY_RUN=false
     SKIP_VALIDATION=false
     SKIP_BACKUP=false
     SKIP_TESTS=false
     VERBOSE=false
+
+    # Validate environment
+    case "$ENVIRONMENT" in
+        dev|staging|production) ;;
+        *) log_error "Invalid environment: $ENVIRONMENT"; log_info "Valid: dev, staging, production"; exit 1 ;;
+    esac
+
+    # Validate region
+    case "$REGION" in
+        eastus|westus|northeurope|southeastasia) ;;
+        *) log_error "Invalid region: $REGION"; log_info "Valid: eastus, westus, northeurope, southeastasia"; exit 1 ;;
+    esac
 
     shift 2
     while [ $# -gt 0 ]; do
