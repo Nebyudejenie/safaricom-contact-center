@@ -72,8 +72,8 @@ variable "db_name" {
 
 variable "db_sku_name" {
   type        = string
-  default     = "B_Standard_B1s"
-  description = "PostgreSQL SKU (B_Standard_B1s for free tier)"
+  default     = "Standard_B1ms"
+  description = "PostgreSQL SKU (Standard_B1ms for free tier)"
 }
 
 variable "db_storage_mb" {
