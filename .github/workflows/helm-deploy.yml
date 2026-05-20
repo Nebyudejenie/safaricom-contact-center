@@ -1,0 +1,100 @@
+################################################################################
+# GitHub Actions Workflow: Helm Deployment
+# Deploys applications to AKS cluster using Helm
+################################################################################
+
+name: Helm Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '04_KUBERNETES/helm/**'
+      - '07_CI_CD/.github/workflows/helm-deploy.yml'
+  workflow_run:
+    workflows: ["Terraform Apply"]
+    types:
+      - completed
+
+jobs:
+  helm-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Get AKS Credentials
+        run: |
+          az aks get-credentials \
+            --resource-group safaricom-cc-production-rg \
+            --name safaricom-cc-production-aks \
+            --overwrite-existing
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Add Helm Repositories
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo update
+
+      - name: Helm Lint
+        working-directory: ./04_KUBERNETES/helm
+        run: helm lint . --strict
+
+      - name: Deploy Contact Center Application
+        run: |
+          helm upgrade --install safaricom-cc ./04_KUBERNETES/helm \
+            --namespace safaricom-cc \
+            --create-namespace \
+            -f ./04_KUBERNETES/helm/values-production.yaml \
+            --wait \
+            --timeout 10m
+
+      - name: Deploy Prometheus
+        run: |
+          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --create-namespace \
+            -f ./05_MONITORING/prometheus/helm-values.yaml \
+            --wait
+
+      - name: Deploy Grafana
+        run: |
+          helm upgrade --install grafana grafana/grafana \
+            --namespace monitoring \
+            -f ./05_MONITORING/grafana/helm-values.yaml \
+            --wait
+
+      - name: Verify Deployments
+        run: |
+          kubectl rollout status deployment/safaricom-cc -n safaricom-cc --timeout=5m
+          kubectl rollout status deployment/prometheus -n monitoring --timeout=5m
+          kubectl rollout status deployment/grafana -n monitoring --timeout=5m
+
+      - name: Get Deployment Status
+        run: kubectl get all -n safaricom-cc
+
+      - name: Create Helm Release Record
+        uses: chrnorm/deployment-status-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          environment-url: https://grafana.example.com
+          state: success
+          description: 'Helm deployment completed successfully'
