@@ -10,7 +10,7 @@ subscription_id = "df5f2896-9c0d-4d96-9355-84c9cbc17e30"
 # ENVIRONMENT CONFIGURATION
 project_name = "safaricom-cc"
 environment  = "production"
-azure_region = "eastus"
+azure_region = "westus2"
 
 # NETWORKING
 vnet_cidr              = "10.0.0.0/16"
@@ -22,9 +22,9 @@ database_subnet_cidr   = "10.0.3.0/24"
 db_admin_username = "psqladmin"
 db_name           = "safaricom_cc"
 
-# Azure Free Tier: Use B1ms (cheapest tier)
-# For production: Use Standard_D2s_v3 or Standard_E2s_v3
-db_sku_name  = "B1ms"
+# SKU format: {Tier prefix}_{Tier name}_{Size}
+# B_Standard_B2s for Burstable, GP_Standard_D2s_v3 for General Purpose
+db_sku_name  = "B_Standard_B2s"
 db_storage_mb = 32768  # 32GB
 
 # KUBERNETES (AKS)

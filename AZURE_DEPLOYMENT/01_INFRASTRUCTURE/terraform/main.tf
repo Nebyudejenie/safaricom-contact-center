@@ -76,6 +76,15 @@ resource "azurerm_subnet" "database" {
   address_prefixes     = [var.database_subnet_cidr]
 
   service_endpoints = ["Microsoft.Storage", "Microsoft.Sql", "Microsoft.KeyVault"]
+
+  delegation {
+    name = "postgres-delegation"
+
+    service_delegation {
+      name    = "Microsoft.DBforPostgreSQL/flexibleServers"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
 }
 
 # ============================================================================
@@ -121,6 +130,18 @@ resource "azurerm_network_security_group" "public" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "5060"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "AllowAGWHealthCheck"
+    priority                   = 103
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "65200-65535"
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
@@ -290,12 +311,10 @@ resource "azurerm_postgresql_flexible_server" "main" {
 
   delegated_subnet_id             = azurerm_subnet.database.id
   private_dns_zone_id             = azurerm_private_dns_zone.postgres.id
-  backup_retention_days           = 30
+  backup_retention_days           = 7
   geo_redundant_backup_enabled    = false
   auto_grow_enabled               = true
-  high_availability {
-    mode = "ZoneRedundant"
-  }
+  public_network_access_enabled   = false
 
   depends_on = [
     azurerm_private_dns_zone_virtual_network_link.postgres
@@ -328,7 +347,7 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "aks" {
 
 # Private DNS zone for PostgreSQL
 resource "azurerm_private_dns_zone" "postgres" {
-  name                = "postgres.database.azure.com"
+  name                = "privatelink.postgres.database.azure.com"
   resource_group_name = azurerm_resource_group.main.name
 }
 
@@ -468,6 +487,7 @@ resource "azurerm_application_gateway" "main" {
     http_listener_name         = "http-listener"
     backend_address_pool_name  = "backend-pool"
     backend_http_settings_name = "backend-http-settings"
+    priority                   = 1
   }
 }
 
@@ -633,6 +653,7 @@ resource "azurerm_application_insights" "main" {
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   application_type    = "web"
+  workspace_id        = azurerm_log_analytics_workspace.main.id
   tags                = var.common_tags
 }
 
