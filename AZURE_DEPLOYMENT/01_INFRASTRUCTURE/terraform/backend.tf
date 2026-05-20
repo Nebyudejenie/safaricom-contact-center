@@ -6,7 +6,7 @@
 terraform {
   backend "azurerm" {
     resource_group_name  = "cosmic"
-    storage_account_name = "ccc0c3f78ed9"
+    storage_account_name = "ccaf78b24d01"
     container_name       = "terraform-state"
     key                  = "production.tfstate"
   }

@@ -385,17 +385,11 @@ resource "azurerm_kubernetes_cluster" "main" {
     network_policy    = "azure"
     service_cidr      = "10.100.0.0/16"
     dns_service_ip    = "10.100.0.10"
-    load_balancer_sku = "Standard"
+    load_balancer_sku = "standard"
   }
 
   ingress_application_gateway {
     gateway_id = azurerm_application_gateway.main.id
-  }
-
-  addon_profile {
-    http_application_routing {
-      enabled = false
-    }
   }
 
   depends_on = [
