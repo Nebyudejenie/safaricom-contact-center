@@ -36,17 +36,16 @@ jobs:
         with:
           terraform_version: 1.5.0
 
-      - name: Terraform Init (requires Azure credentials)
-        working-directory: ./AZURE_DEPLOYMENT/01_INFRASTRUCTURE/terraform
-        run: terraform init -no-color
-
       - name: Terraform Format Check
         working-directory: ./AZURE_DEPLOYMENT/01_INFRASTRUCTURE/terraform
         run: terraform fmt -check -recursive
 
-      - name: Terraform Validate
+      - name: Terraform Validate (syntax only, no backend)
         working-directory: ./AZURE_DEPLOYMENT/01_INFRASTRUCTURE/terraform
-        run: terraform validate -no-color
+        run: |
+          # Validate syntax without initializing backend
+          terraform init -backend=false -no-color || true
+          terraform validate -no-color
 
   helm-validate:
     runs-on: ubuntu-latest
