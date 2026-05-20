@@ -91,10 +91,5 @@ jobs:
       - name: Get Deployment Status
         run: kubectl get all -n safaricom-cc
 
-      - name: Create Helm Release Record
-        uses: chrnorm/deployment-status-action@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          environment-url: https://grafana.example.com
-          state: success
-          description: 'Helm deployment completed successfully'
+      - name: Deployment Complete
+        run: echo "✅ Helm deployment completed successfully. Check AKS cluster for running pods."

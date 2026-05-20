@@ -22,6 +22,11 @@ on:
 jobs:
   terraform-validate:
     runs-on: ubuntu-latest
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -31,13 +36,17 @@ jobs:
         with:
           terraform_version: 1.5.0
 
+      - name: Terraform Init (requires Azure credentials)
+        working-directory: ./AZURE_DEPLOYMENT/01_INFRASTRUCTURE/terraform
+        run: terraform init -no-color
+
       - name: Terraform Format Check
         working-directory: ./AZURE_DEPLOYMENT/01_INFRASTRUCTURE/terraform
         run: terraform fmt -check -recursive
 
       - name: Terraform Validate
         working-directory: ./AZURE_DEPLOYMENT/01_INFRASTRUCTURE/terraform
-        run: terraform validate
+        run: terraform validate -no-color
 
   helm-validate:
     runs-on: ubuntu-latest
