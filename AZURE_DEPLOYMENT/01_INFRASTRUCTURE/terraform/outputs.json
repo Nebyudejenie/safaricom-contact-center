@@ -1,0 +1,27 @@
+{
+  "acr_login_server": {
+    "sensitive": false,
+    "type": "string",
+    "value": "safaricomccproductionacr.azurecr.io"
+  },
+  "aks_cluster_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "safaricom-cc-production-aks"
+  },
+  "application_gateway_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "52.188.9.13"
+  },
+  "key_vault_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "/subscriptions/df5f2896-9c0d-4d96-9355-84c9cbc17e30/resourceGroups/safaricom-cc-production-rg/providers/Microsoft.KeyVault/vaults/cc-df5f2896-kv"
+  },
+  "resource_group_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "safaricom-cc-production-rg"
+  }
+}
